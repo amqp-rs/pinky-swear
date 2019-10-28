@@ -1,0 +1,13 @@
+[package]
+name = "pinky-swear"
+version = "0.0.0"
+authors = ["Marc-Antoine Perennou <Marc-Antoine@Perennou.com>"]
+edition = "2018"
+description = "WIP"
+repository = "https://github.com/Keruspe/pinky-swear"
+documentation = "https://docs.rs/pinky-swear"
+license = "BSD-2-Clause"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
