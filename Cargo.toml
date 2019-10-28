@@ -11,3 +11,9 @@ license = "BSD-2-Clause"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+parking_lot = '^0.9'
+
+[dependencies.futures]
+package = "futures-core-preview"
+version = "=0.3.0-alpha.19"
+optional = true
