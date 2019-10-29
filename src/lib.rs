@@ -119,7 +119,7 @@ impl<S, T, P: Pinky<T>> fmt::Debug for ComposedPinky<S, T, P> {
 }
 
 #[cfg(feature = "futures")]
-pub(crate) mod futures {
+pub mod futures {
     use super::*;
 
     use std::{
