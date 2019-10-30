@@ -18,24 +18,14 @@ pub struct PinkySwear<T> {
     task: Arc<Mutex<Option<Box<dyn NotifyReady + Send>>>>,
 }
 
-pub trait Pinky<T> {
-    fn swear(&self, data: T);
-}
-
 #[derive(Clone)]
-pub struct SimplePinky<T> {
+pub struct Pinky<T> {
     send: SyncSender<T>,
     task: Arc<Mutex<Option<Box<dyn NotifyReady + Send>>>>,
 }
 
-#[derive(Clone)]
-pub struct ComposedPinky<S, T, P: Pinky<T>> {
-    send: P,
-    transform: Arc<dyn Fn(S) -> T>,
-}
-
 impl<T> PinkySwear<T> {
-    pub fn new() -> (Self, impl Pinky<T>) {
+    pub fn new() -> (Self, Pinky<T>) {
         let (send, recv) = sync_channel(1);
         let promise = Self {
             recv,
@@ -52,8 +42,8 @@ impl<T> PinkySwear<T> {
         promise
     }
 
-    fn pinky(&self) -> impl Pinky<T> {
-        SimplePinky {
+    fn pinky(&self) -> Pinky<T> {
+        Pinky {
             send: self.send.clone(),
             task: self.task.clone(),
         }
@@ -76,27 +66,12 @@ impl<T> PinkySwear<T> {
     }
 }
 
-impl<T: 'static> SimplePinky<T> {
-    pub fn compose<S: 'static>(self, f: Box<dyn Fn(S) -> T>) -> impl Pinky<S> {
-        ComposedPinky {
-            send: self,
-            transform: Arc::new(f),
-        }
-    }
-}
-
-impl<T> Pinky<T> for SimplePinky<T> {
+impl<T> Pinky<T> {
     fn swear(&self, data: T) {
         let _ = self.send.send(data);
         if let Some(task) = self.task.lock().take() {
             task.notify();
         }
-    }
-}
-
-impl<S, T, P: Pinky<T>> Pinky<S> for ComposedPinky<S, T, P> {
-    fn swear(&self, data: S) {
-        self.send.swear((self.transform)(data));
     }
 }
 
@@ -106,15 +81,9 @@ impl<T> fmt::Debug for PinkySwear<T> {
     }
 }
 
-impl<T> fmt::Debug for SimplePinky<T> {
+impl<T> fmt::Debug for Pinky<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "SimplePinky")
-    }
-}
-
-impl<S, T, P: Pinky<T>> fmt::Debug for ComposedPinky<S, T, P> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ComposedPinky")
+        write!(f, "Pinky")
     }
 }
 
