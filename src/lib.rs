@@ -14,13 +14,18 @@ use std::{
 pub struct PinkySwear<T> {
     recv: Receiver<T>,
     send: SyncSender<T>,
-    task: Arc<Mutex<Option<Box<dyn NotifyReady + Send>>>>,
+    inner: Arc<Mutex<Inner>>,
 }
 
 #[derive(Clone)]
 pub struct Pinky<T> {
     send: SyncSender<T>,
-    task: Arc<Mutex<Option<Box<dyn NotifyReady + Send>>>>,
+    inner: Arc<Mutex<Inner>>,
+}
+
+#[derive(Default)]
+struct Inner {
+    task: Option<Box<dyn NotifyReady + Send>>,
 }
 
 impl<T> PinkySwear<T> {
@@ -29,7 +34,7 @@ impl<T> PinkySwear<T> {
         let promise = Self {
             recv,
             send,
-            task: Arc::new(Mutex::new(None)),
+            inner: Arc::new(Mutex::new(Inner::default())),
         };
         let pinky = promise.pinky();
         (promise, pinky)
@@ -44,7 +49,7 @@ impl<T> PinkySwear<T> {
     fn pinky(&self) -> Pinky<T> {
         Pinky {
             send: self.send.clone(),
-            task: self.task.clone(),
+            inner: self.inner.clone(),
         }
     }
 
@@ -57,18 +62,18 @@ impl<T> PinkySwear<T> {
     }
 
     pub fn subscribe(&self, task: Box<dyn NotifyReady + Send>) {
-        *self.task.lock() = Some(task);
+        self.inner.lock().task = Some(task);
     }
 
     pub fn has_subscriber(&self) -> bool {
-        self.task.lock().is_some()
+        self.inner.lock().task.is_some()
     }
 }
 
 impl<T> Pinky<T> {
     fn swear(&self, data: T) {
         let _ = self.send.send(data);
-        if let Some(task) = self.task.lock().take() {
+        if let Some(task) = self.inner.lock().task.as_ref() {
             task.notify();
         }
     }
