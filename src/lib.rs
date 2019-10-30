@@ -103,7 +103,7 @@ impl<T: 'static, S: 'static> PinkySwear<T, S> {
 }
 
 impl<T, S> Pinky<T, S> {
-    fn swear(&self, data: T) {
+    pub fn swear(&self, data: T) {
         let _ = self.send.send(data);
         if let Some(task) = self.inner.lock().task.as_ref() {
             task.notify();
