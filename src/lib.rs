@@ -1,10 +1,13 @@
 use parking_lot::Mutex;
 use std::{
     fmt,
+    future::Future,
+    pin::Pin,
     sync::{
         mpsc::{sync_channel, Receiver, SyncSender},
         Arc,
     },
+    task::{Context, Poll, Waker},
 };
 
 pub trait NotifyReady {
@@ -87,32 +90,19 @@ impl<T> fmt::Debug for Pinky<T> {
     }
 }
 
-#[cfg(feature = "futures")]
-pub mod futures {
-    use super::*;
+impl<T> Future for PinkySwear<T> {
+    type Output = T;
 
-    use std::{
-        future::Future,
-        pin::Pin,
-        task::{Context, Poll, Waker},
-    };
-
-    impl<T> Future for PinkySwear<T> {
-        type Output = T;
-
-        fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            if !self.has_subscriber() {
-                self.subscribe(Box::new(Watcher(cx.waker().clone())));
-            }
-            self.try_wait().map(Poll::Ready).unwrap_or(Poll::Pending)
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if !self.has_subscriber() {
+            self.subscribe(Box::new(cx.waker().clone()));
         }
+        self.try_wait().map(Poll::Ready).unwrap_or(Poll::Pending)
     }
+}
 
-    pub(crate) struct Watcher(pub(crate) Waker);
-
-    impl NotifyReady for Watcher {
-        fn notify(&self) {
-            self.0.wake_by_ref();
-        }
+impl NotifyReady for Waker {
+    fn notify(&self) {
+        self.wake_by_ref();
     }
 }

@@ -10,8 +10,5 @@ license = "BSD-2-Clause"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[features]
-futures = []
-
 [dependencies]
 parking_lot = '^0.9'
