@@ -10,10 +10,6 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
-pub trait NotifyReady {
-    fn notify(&self);
-}
-
 #[must_use = "PinkySwear should be used or you can miss errors"]
 pub struct PinkySwear<T> {
     recv: Receiver<T>,
@@ -99,6 +95,35 @@ impl<T> Future for PinkySwear<T> {
         }
         self.try_wait().map(Poll::Ready).unwrap_or(Poll::Pending)
     }
+}
+
+trait Promise<T> {
+    fn try_wait(&self) -> Option<T>;
+    fn wait(&self) -> T;
+}
+
+impl<T> Promise<T> for PinkySwear<T> {
+    fn try_wait(&self) -> Option<T> {
+        self.try_wait()
+    }
+
+    fn wait(&self) -> T {
+        self.wait()
+    }
+}
+
+pub trait Cancellable<E> {
+    fn cancel(&self, err: E);
+}
+
+impl<T, E> Cancellable<E> for Pinky<Result<T, E>> {
+    fn cancel(&self, err: E) {
+        self.swear(Err(err))
+    }
+}
+
+pub trait NotifyReady {
+    fn notify(&self);
 }
 
 impl NotifyReady for Waker {
