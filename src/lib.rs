@@ -26,6 +26,7 @@ pub struct Pinky<T, S = ()> {
 struct Inner<T, S> {
     task: Option<Box<dyn NotifyReady + Send>>,
     barrier: Option<(Box<dyn Promise<S> + Send>, Box<dyn Fn(S) -> T + Send>)>,
+    before: Option<Box<dyn Promise<S> + Send>>,
 }
 
 impl<T, S> Default for Inner<T, S> {
@@ -33,6 +34,7 @@ impl<T, S> Default for Inner<T, S> {
         Self {
             task: None,
             barrier: None,
+            before: None,
         }
     }
 }
@@ -40,6 +42,17 @@ impl<T, S> Default for Inner<T, S> {
 impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     pub fn new() -> (Self, Pinky<T, S>) {
         let promise = Self::new_with_inner(Inner::default());
+        let pinky = promise.pinky();
+        (promise, pinky)
+    }
+
+    pub fn after<B: 'static>(promise: PinkySwear<S, B>) -> (Self, Pinky<T, S>) where S: Send {
+        let inner = Inner {
+            task: None,
+            barrier: None,
+            before: Some(Box::new(promise)),
+        };
+        let promise = Self::new_with_inner(inner);
         let pinky = promise.pinky();
         (promise, pinky)
     }
@@ -67,7 +80,13 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     }
 
     pub fn try_wait(&self) -> Option<T> {
-        if let Some((barrier, transform)) = self.inner.lock().barrier.as_ref() {
+        let mut inner = self.inner.lock();
+        if let Some(before) = inner.before.as_ref() {
+            if let Some(_) = before.try_wait() {
+                inner.before = None;
+            }
+        }
+        if let Some((barrier, transform)) = inner.barrier.as_ref() {
             barrier.try_wait().map(transform)
         } else {
             self.recv.try_recv().ok()
@@ -75,7 +94,11 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     }
 
     pub fn wait(&self) -> T {
-        if let Some((barrier, transform)) = self.inner.lock().barrier.as_ref() {
+        let mut inner = self.inner.lock();
+        if let Some(before) = inner.before.take() {
+            before.wait();
+        }
+        if let Some((barrier, transform)) = inner.barrier.as_ref() {
             transform(barrier.wait())
         } else {
             self.recv.recv().unwrap()
@@ -97,6 +120,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
         let inner = Inner {
             task: None,
             barrier: Some((Box::new(self), transform)),
+            before: None,
         };
         PinkySwear::new_with_inner(inner)
     }
