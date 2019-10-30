@@ -39,18 +39,18 @@ impl<T, S> Default for Inner<T, S> {
 
 impl<T: 'static, S: 'static> PinkySwear<T, S> {
     pub fn new() -> (Self, Pinky<T, S>) {
-        Self::new_with_inner(Inner::default())
+        let promise = Self::new_with_inner(Inner::default());
+        let pinky = promise.pinky();
+        (promise, pinky)
     }
 
-    fn new_with_inner(inner: Inner<T, S>) -> (Self, Pinky<T, S>) {
+    fn new_with_inner(inner: Inner<T, S>) -> Self {
         let (send, recv) = sync_channel(1);
-        let promise = Self {
+        Self {
             recv,
             send,
             inner: Arc::new(Mutex::new(inner)),
-        };
-        let pinky = promise.pinky();
-        (promise, pinky)
+        }
     }
 
     pub fn new_with_data(data: T) -> Self {
@@ -93,7 +93,7 @@ impl<T: 'static, S: 'static> PinkySwear<T, S> {
     pub fn traverse<F: 'static>(
         self,
         transform: Box<dyn Fn(T) -> F + Send>,
-    ) -> (PinkySwear<F, T>, Pinky<F, T>) {
+    ) -> PinkySwear<F, T> {
         let inner = Inner {
             task: None,
             barrier: Some((Box::new(self), transform)),
