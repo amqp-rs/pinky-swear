@@ -25,7 +25,7 @@ pub struct Pinky<T, S = ()> {
 
 struct Inner<T, S> {
     task: Option<Box<dyn NotifyReady + Send>>,
-    barrier: Option<(Box<dyn Promise<S>>, Box<dyn Fn(S) -> T>)>,
+    barrier: Option<(Box<dyn Promise<S>>, Box<dyn Fn(S) -> T + Send>)>,
 }
 
 impl<T, S> Default for Inner<T, S> {
@@ -92,7 +92,7 @@ impl<T: 'static, S: 'static> PinkySwear<T, S> {
 
     pub fn traverse<F: 'static>(
         self,
-        transform: Box<dyn Fn(T) -> F>,
+        transform: Box<dyn Fn(T) -> F + Send>,
     ) -> (PinkySwear<F, T>, Pinky<F, T>) {
         let inner = Inner {
             task: None,
