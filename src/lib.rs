@@ -25,7 +25,7 @@ pub struct Pinky<T, S = ()> {
 
 struct Inner<T, S> {
     task: Option<Box<dyn NotifyReady + Send>>,
-    barrier: Option<(Box<dyn Promise<S>>, Box<dyn Fn(S) -> T + Send>)>,
+    barrier: Option<(Box<dyn Promise<S> + Send>, Box<dyn Fn(S) -> T + Send>)>,
 }
 
 impl<T, S> Default for Inner<T, S> {
@@ -37,7 +37,7 @@ impl<T, S> Default for Inner<T, S> {
     }
 }
 
-impl<T: 'static, S: 'static> PinkySwear<T, S> {
+impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     pub fn new() -> (Self, Pinky<T, S>) {
         let promise = Self::new_with_inner(Inner::default());
         let pinky = promise.pinky();
@@ -90,7 +90,7 @@ impl<T: 'static, S: 'static> PinkySwear<T, S> {
         self.inner.lock().task.is_some()
     }
 
-    pub fn traverse<F: 'static>(
+    pub fn traverse<F: Send + 'static>(
         self,
         transform: Box<dyn Fn(T) -> F + Send>,
     ) -> PinkySwear<F, T> {
@@ -123,7 +123,7 @@ impl<T, S> fmt::Debug for Pinky<T, S> {
     }
 }
 
-impl<T: 'static, S: 'static> Future for PinkySwear<T, S> {
+impl<T: Send + 'static, S: 'static> Future for PinkySwear<T, S> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -139,7 +139,7 @@ trait Promise<T> {
     fn wait(&self) -> T;
 }
 
-impl<T: 'static, S: 'static> Promise<T> for PinkySwear<T, S> {
+impl<T: Send + 'static, S: 'static> Promise<T> for PinkySwear<T, S> {
     fn try_wait(&self) -> Option<T> {
         self.try_wait()
     }
