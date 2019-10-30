@@ -24,7 +24,7 @@ pub struct Pinky<T, S = ()> {
 }
 
 struct Inner<T, S> {
-    task: Option<Box<dyn NotifyReady + Send>>,
+    task: Vec<Box<dyn NotifyReady + Send>>,
     barrier: Option<(Box<dyn Promise<S> + Send>, Box<dyn Fn(S) -> T + Send>)>,
     before: Option<Box<dyn Promise<S> + Send>>,
 }
@@ -32,7 +32,7 @@ struct Inner<T, S> {
 impl<T, S> Default for Inner<T, S> {
     fn default() -> Self {
         Self {
-            task: None,
+            task: Vec::default(),
             barrier: None,
             before: None,
         }
@@ -48,7 +48,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
 
     pub fn after<B: 'static>(promise: PinkySwear<S, B>) -> (Self, Pinky<T, S>) where S: Send {
         let inner = Inner {
-            task: None,
+            task: Vec::default(),
             barrier: None,
             before: Some(Box::new(promise)),
         };
@@ -106,11 +106,11 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     }
 
     pub fn subscribe(&self, task: Box<dyn NotifyReady + Send>) {
-        self.inner.lock().task = Some(task);
+        self.inner.lock().task.push(task);
     }
 
     pub fn has_subscriber(&self) -> bool {
-        self.inner.lock().task.is_some()
+        !self.inner.lock().task.is_empty()
     }
 
     pub fn traverse<F: Send + 'static>(
@@ -118,7 +118,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
         transform: Box<dyn Fn(T) -> F + Send>,
     ) -> PinkySwear<F, T> {
         let inner = Inner {
-            task: None,
+            task: Vec::default(),
             barrier: Some((Box::new(self), transform)),
             before: None,
         };
@@ -129,7 +129,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
 impl<T, S> Pinky<T, S> {
     pub fn swear(&self, data: T) {
         let _ = self.send.send(data);
-        if let Some(task) = self.inner.lock().task.as_ref() {
+        for task in self.inner.lock().task.iter() {
             task.notify();
         }
     }
