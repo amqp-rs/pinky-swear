@@ -82,9 +82,8 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     pub fn try_wait(&self) -> Option<T> {
         let mut inner = self.inner.lock();
         if let Some(before) = inner.before.as_ref() {
-            if let Some(_) = before.try_wait() {
-                inner.before = None;
-            }
+            let _ = before.try_wait()?;
+            inner.before = None;
         }
         if let Some((barrier, transform)) = inner.barrier.as_ref() {
             barrier.try_wait().map(transform)
