@@ -28,7 +28,7 @@
 #![doc(test(attr(allow(unused_extern_crates))))]
 #![doc(html_root_url = "https://docs.rs/amq-protocol/0.4.2/")]
 
-doc_comment::doctest!("../README.md", README);
+doc_comment::doctest!("../README.md");
 
 use parking_lot::Mutex;
 use std::{
@@ -45,11 +45,9 @@ use std::{
 #[must_use = "PinkySwear should be used or you can miss errors"]
 pub struct PinkySwear<T, S = ()> {
     recv: Receiver<T>,
-    send: SyncSender<T>,
-    inner: Arc<Mutex<Inner<T, S>>>,
+    pinky: Pinky<T, S>,
 }
 
-#[derive(Clone)]
 pub struct Pinky<T, S = ()> {
     send: SyncSender<T>,
     inner: Arc<Mutex<Inner<T, S>>>,
@@ -80,9 +78,8 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
 
     pub fn after<B: 'static>(promise: PinkySwear<S, B>) -> (Self, Pinky<T, S>) where S: Send {
         let inner = Inner {
-            task: Vec::default(),
-            barrier: None,
             before: Some(Box::new(promise)),
+            ..Inner::default()
         };
         let promise = Self::new_with_inner(inner);
         let pinky = promise.pinky();
@@ -91,11 +88,9 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
 
     fn new_with_inner(inner: Inner<T, S>) -> Self {
         let (send, recv) = sync_channel(1);
-        Self {
-            recv,
-            send,
-            inner: Arc::new(Mutex::new(inner)),
-        }
+        let inner = Arc::new(Mutex::new(inner));
+        let pinky = Pinky { send, inner };
+        Self { recv, pinky }
     }
 
     pub fn new_with_data(data: T) -> Self {
@@ -105,14 +100,11 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     }
 
     fn pinky(&self) -> Pinky<T, S> {
-        Pinky {
-            send: self.send.clone(),
-            inner: self.inner.clone(),
-        }
+        self.pinky.clone()
     }
 
     pub fn try_wait(&self) -> Option<T> {
-        let mut inner = self.inner.lock();
+        let mut inner = self.pinky.inner.lock();
         if let Some(before) = inner.before.as_ref() {
             let _ = before.try_wait()?;
             inner.before = None;
@@ -125,7 +117,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     }
 
     pub fn wait(&self) -> T {
-        let mut inner = self.inner.lock();
+        let mut inner = self.pinky.inner.lock();
         if let Some(before) = inner.before.take() {
             before.wait();
         }
@@ -137,11 +129,11 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     }
 
     pub fn subscribe(&self, task: Box<dyn NotifyReady + Send>) {
-        self.inner.lock().task.push(task);
+        self.pinky.inner.lock().task.push(task);
     }
 
     pub fn has_subscriber(&self) -> bool {
-        !self.inner.lock().task.is_empty()
+        !self.pinky.inner.lock().task.is_empty()
     }
 
     pub fn traverse<F: Send + 'static>(
@@ -149,9 +141,8 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
         transform: Box<dyn Fn(T) -> F + Send>,
     ) -> PinkySwear<F, T> {
         let inner = Inner {
-            task: Vec::default(),
             barrier: Some((Box::new(self), transform)),
-            before: None,
+            ..Inner::default()
         };
         PinkySwear::new_with_inner(inner)
     }
@@ -162,6 +153,15 @@ impl<T, S> Pinky<T, S> {
         let _ = self.send.send(data);
         for task in self.inner.lock().task.iter() {
             task.notify();
+        }
+    }
+}
+
+impl<T, S> Clone for Pinky<T, S> {
+    fn clone(&self) -> Self {
+        Self {
+            send: self.send.clone(),
+            inner: self.inner.clone(),
         }
     }
 }
