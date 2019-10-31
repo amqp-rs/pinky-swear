@@ -1,6 +1,6 @@
 [package]
 name = "pinky-swear"
-version = "0.4.2"
+version = "0.4.2" # remember to update html_root_url
 authors = ["Marc-Antoine Perennou <Marc-Antoine@Perennou.com>"]
 edition = "2018"
 description = "WIP"
@@ -11,4 +11,5 @@ license = "BSD-2-Clause"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+doc-comment = "^0.3"
 parking_lot = '^0.9'

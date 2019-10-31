@@ -1,3 +1,35 @@
+//! Simple promise library compatible with `std::future` and async/await
+//!
+//! # Example
+//!
+//! Create a promise and wait for the result while computing the result in another thread
+//!
+//! ```rust
+//! use pinky_swear::{Pinky, PinkySwear};
+//! use std::{thread, time::Duration};
+//!
+//! fn compute(pinky: Pinky<Result<u32, ()>>) {
+//!     thread::sleep(Duration::from_millis(1000));
+//!     pinky.swear(Ok(42));
+//! }
+//!
+//! fn main() {
+//!     let (promise, pinky) = PinkySwear::new();
+//!     thread::spawn(move || {
+//!         compute(pinky);
+//!     });
+//!     assert_eq!(promise.wait(), Ok(42));
+//! }
+//! ```
+
+#![cfg_attr(feature = "docs", feature(doc_cfg))]
+#![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
+#![doc(test(attr(deny(rust_2018_idioms, warnings))))]
+#![doc(test(attr(allow(unused_extern_crates))))]
+#![doc(html_root_url = "https://docs.rs/amq-protocol/0.4.2/")]
+
+doc_comment::doctest!("../README.md", README);
+
 use parking_lot::Mutex;
 use std::{
     fmt,
