@@ -42,12 +42,14 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
+/// A PinkySwear is a Promise that the other party is supposed to honour at some point.
 #[must_use = "PinkySwear should be used or you can miss errors"]
 pub struct PinkySwear<T, S = ()> {
     recv: Receiver<T>,
     pinky: Pinky<T, S>,
 }
 
+/// A Pinky allows you to fulfill a Promise that you made.
 pub struct Pinky<T, S = ()> {
     send: SyncSender<T>,
     inner: Arc<Mutex<Inner<T, S>>>,
@@ -70,12 +72,14 @@ impl<T, S> Default for Inner<T, S> {
 }
 
 impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
+    /// Create a new PinkySwear and its associated Pinky.
     pub fn new() -> (Self, Pinky<T, S>) {
         let promise = Self::new_with_inner(Inner::default());
         let pinky = promise.pinky();
         (promise, pinky)
     }
 
+    /// Wait for this promise only once the given one is honoured.
     pub fn after<B: 'static>(promise: PinkySwear<S, B>) -> (Self, Pinky<T, S>) where S: Send {
         let inner = Inner {
             before: Some(Box::new(promise)),
@@ -93,6 +97,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
         Self { recv, pinky }
     }
 
+    /// Create a new PinkySwear and honour it at the same time.
     pub fn new_with_data(data: T) -> Self {
         let (promise, pinky) = Self::new();
         pinky.swear(data);
@@ -103,6 +108,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
         self.pinky.clone()
     }
 
+    /// Check whether the Promise has been honoured or not.
     pub fn try_wait(&self) -> Option<T> {
         let mut inner = self.pinky.inner.lock();
         if let Some(before) = inner.before.as_ref() {
@@ -116,6 +122,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
         }
     }
 
+    /// Wait until the Promise has been honoured.
     pub fn wait(&self) -> T {
         let mut inner = self.pinky.inner.lock();
         if let Some(before) = inner.before.take() {
@@ -128,14 +135,17 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
         }
     }
 
+    /// Get notified once the Promise has been honoured.
     pub fn subscribe(&self, task: Box<dyn NotifyReady + Send>) {
         self.pinky.inner.lock().task.push(task);
     }
 
+    /// Will someone get notified once the Promise is honoured?
     pub fn has_subscriber(&self) -> bool {
         !self.pinky.inner.lock().task.is_empty()
     }
 
+    /// Apply a tranformation to the result of a PinkySwear.
     pub fn traverse<F: Send + 'static>(
         self,
         transform: Box<dyn Fn(T) -> F + Send>,
@@ -149,6 +159,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
 }
 
 impl<T, S> Pinky<T, S> {
+    /// Honour your PinkySwear by giving the promised data.
     pub fn swear(&self, data: T) {
         let _ = self.send.send(data);
         for task in self.inner.lock().task.iter() {
@@ -204,7 +215,9 @@ impl<T: Send + 'static, S: 'static> Promise<T> for PinkySwear<T, S> {
     }
 }
 
+/// Sometimes you just cannot keep your Promises.
 pub trait Cancellable<E> {
+    /// Cancel the Promise you made, explaining why with an Error.
     fn cancel(&self, err: E);
 }
 
@@ -214,7 +227,9 @@ impl<T, S, E> Cancellable<E> for Pinky<Result<T, E>, S> {
     }
 }
 
+/// Notify once a Promise is honoured.
 pub trait NotifyReady {
+    /// Notify once a Promise is honoured.
     fn notify(&self);
 }
 
