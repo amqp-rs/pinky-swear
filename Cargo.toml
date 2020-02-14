@@ -12,4 +12,4 @@ license = "BSD-2-Clause"
 
 [dependencies]
 doc-comment = "^0.3"
-parking_lot = '^0.9'
+parking_lot = '^0.10'
