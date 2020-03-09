@@ -56,7 +56,8 @@ pub struct Pinky<T, S = ()> {
 }
 
 struct Inner<T, S> {
-    task: Vec<Box<dyn NotifyReady + Send>>,
+    main_task: Option<Box<dyn NotifyReady + Send>>,
+    tasks: Vec<Box<dyn NotifyReady + Send>>,
     barrier: Option<(Box<dyn Promise<S> + Send>, Box<dyn Fn(S) -> T + Send>)>,
     before: Option<Box<dyn Promise<S> + Send>>,
 }
@@ -64,7 +65,8 @@ struct Inner<T, S> {
 impl<T, S> Default for Inner<T, S> {
     fn default() -> Self {
         Self {
-            task: Vec::default(),
+            main_task: None,
+            tasks: Vec::default(),
             barrier: None,
             before: None,
         }
@@ -137,17 +139,18 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
 
     /// Get notified once the Promise has been honoured.
     pub fn subscribe(&self, task: Box<dyn NotifyReady + Send>) {
-        self.pinky.inner.lock().task.push(task);
+        self.pinky.inner.lock().tasks.push(task);
     }
 
     /// Will someone get notified once the Promise is honoured?
     pub fn has_subscriber(&self) -> bool {
-        !self.pinky.inner.lock().task.is_empty()
+        let inner = self.pinky.inner.lock();
+        inner.main_task.is_some() || !inner.tasks.is_empty()
     }
 
     /// Drop all the pending subscribers
     pub fn drop_subscribers(&self) {
-        self.pinky.inner.lock().task.clear()
+        self.pinky.inner.lock().tasks.clear()
     }
 
     /// Apply a tranformation to the result of a PinkySwear.
@@ -167,7 +170,11 @@ impl<T, S> Pinky<T, S> {
     /// Honour your PinkySwear by giving the promised data.
     pub fn swear(&self, data: T) {
         let _ = self.send.send(data);
-        for task in self.inner.lock().task.iter() {
+        let inner = self.inner.lock();
+        if let Some(task) = inner.main_task.as_ref() {
+            task.notify();
+        }
+        for task in inner.tasks.iter() {
             task.notify();
         }
     }
@@ -198,8 +205,9 @@ impl<T: Send + 'static, S: 'static> Future for PinkySwear<T, S> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if !self.has_subscriber() {
-            self.subscribe(Box::new(cx.waker().clone()));
+        {
+            let mut inner = self.pinky.inner.lock();
+            inner.main_task = Some(Box::new(cx.waker().clone()));
         }
         self.try_wait().map(Poll::Ready).unwrap_or(Poll::Pending)
     }
