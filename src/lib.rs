@@ -145,6 +145,11 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
         !self.pinky.inner.lock().task.is_empty()
     }
 
+    /// Drop all the pending subscribers
+    pub fn drop_subscribers(&self) {
+        self.pinky.inner.lock().task.clear()
+    }
+
     /// Apply a tranformation to the result of a PinkySwear.
     pub fn traverse<F: Send + 'static>(
         self,
