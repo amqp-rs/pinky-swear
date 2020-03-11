@@ -56,7 +56,7 @@ pub struct Pinky<T, S = ()> {
 }
 
 struct Inner<T, S> {
-    main_task: Option<Box<dyn NotifyReady + Send>>,
+    waker: Option<Waker>,
     tasks: Vec<Box<dyn NotifyReady + Send>>,
     barrier: Option<(Box<dyn Promise<S> + Send>, Box<dyn Fn(S) -> T + Send>)>,
     before: Option<Box<dyn Promise<S> + Send>>,
@@ -65,7 +65,7 @@ struct Inner<T, S> {
 impl<T, S> Default for Inner<T, S> {
     fn default() -> Self {
         Self {
-            main_task: None,
+            waker: None,
             tasks: Vec::default(),
             barrier: None,
             before: None,
@@ -145,7 +145,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     /// Will someone get notified once the Promise is honoured?
     pub fn has_subscriber(&self) -> bool {
         let inner = self.pinky.inner.lock();
-        inner.main_task.is_some() || !inner.tasks.is_empty()
+        inner.waker.is_some() || !inner.tasks.is_empty()
     }
 
     /// Drop all the pending subscribers
@@ -171,8 +171,8 @@ impl<T, S> Pinky<T, S> {
     pub fn swear(&self, data: T) {
         let _ = self.send.send(data);
         let inner = self.inner.lock();
-        if let Some(task) = inner.main_task.as_ref() {
-            task.notify();
+        if let Some(waker) = inner.waker.as_ref() {
+            waker.wake_by_ref();
         }
         for task in inner.tasks.iter() {
             task.notify();
@@ -207,7 +207,7 @@ impl<T: Send + 'static, S: 'static> Future for PinkySwear<T, S> {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         {
             let mut inner = self.pinky.inner.lock();
-            inner.main_task = Some(Box::new(cx.waker().clone()));
+            inner.waker = Some(cx.waker().clone());
         }
         self.try_wait().map(Poll::Ready).unwrap_or(Poll::Pending)
     }
