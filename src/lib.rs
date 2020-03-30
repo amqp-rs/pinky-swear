@@ -58,6 +58,7 @@ pub struct Pinky<T, S = ()> {
 
 struct Inner<T, S> {
     waker: Option<Waker>,
+    next: Option<Box<dyn NotifyReady + Send>>,
     tasks: Vec<Box<dyn NotifyReady + Send>>,
     barrier: Option<(Box<dyn Promise<S> + Send>, Box<dyn Fn(S) -> T + Send>)>,
     before: Option<Box<dyn Promise<S> + Send>>,
@@ -67,6 +68,7 @@ impl<T, S> Default for Inner<T, S> {
     fn default() -> Self {
         Self {
             waker: None,
+            next: None,
             tasks: Vec::default(),
             barrier: None,
             before: None,
@@ -84,11 +86,13 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
 
     /// Wait for this promise only once the given one is honoured.
     pub fn after<B: 'static>(promise: PinkySwear<S, B>) -> (Self, Pinky<T, S>) where S: Send {
+        let pinky = promise.pinky();
         let inner = Inner {
             before: Some(Box::new(promise)),
             ..Inner::default()
         };
         let promise = Self::new_with_inner(inner);
+        promise.pinky.inner.lock().next = Some(Box::new(pinky));
         let pinky = promise.pinky();
         (promise, pinky)
     }
@@ -146,7 +150,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     /// Will someone get notified once the Promise is honoured?
     pub fn has_subscriber(&self) -> bool {
         let inner = self.pinky.inner.lock();
-        inner.waker.is_some() || !inner.tasks.is_empty()
+        inner.waker.is_some() || inner.next.is_some() || !inner.tasks.is_empty()
     }
 
     /// Drop all the pending subscribers
@@ -159,11 +163,14 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
         self,
         transform: Box<dyn Fn(T) -> F + Send>,
     ) -> PinkySwear<F, T> {
+        let pinky = self.pinky();
         let inner = Inner {
             barrier: Some((Box::new(self), transform)),
             ..Inner::default()
         };
-        PinkySwear::new_with_inner(inner)
+        let promise = PinkySwear::new_with_inner(inner);
+        promise.pinky.inner.lock().next = Some(Box::new(pinky));
+        promise
     }
 }
 
@@ -173,15 +180,7 @@ impl<T, S> Pinky<T, S> {
         trace!("Resolving promise");
         let res = self.send.send(data);
         trace!("Resolving promise gave: {:?}", res);
-        let inner = self.inner.lock();
-        if let Some(waker) = inner.waker.as_ref() {
-            trace!("Got data, waking our waker");
-            waker.wake_by_ref();
-        }
-        for task in inner.tasks.iter() {
-            trace!("Got data, notifying task");
-            task.notify();
-        }
+        self.inner.lock().notify();
     }
 }
 
@@ -190,6 +189,23 @@ impl<T, S> Clone for Pinky<T, S> {
         Self {
             send: self.send.clone(),
             inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<T, S> Inner<T, S> {
+    fn notify(&self) {
+        if let Some(waker) = self.waker.as_ref() {
+            trace!("Got data, waking our waker");
+            waker.wake_by_ref();
+        }
+        if let Some(next) = self.next.as_ref() {
+            trace!("Got data, notifying next in chain");
+            next.notify();
+        }
+        for task in self.tasks.iter() {
+            trace!("Got data, notifying task");
+            task.notify();
         }
     }
 }
@@ -250,6 +266,12 @@ impl<T, S, E> Cancellable<E> for Pinky<Result<T, E>, S> {
 pub trait NotifyReady {
     /// Notify once a Promise is honoured.
     fn notify(&self);
+}
+
+impl<T, S> NotifyReady for Pinky<T, S> {
+    fn notify(&self) {
+        self.inner.lock().notify();
+    }
 }
 
 impl NotifyReady for Waker {
