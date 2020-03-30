@@ -216,6 +216,12 @@ impl<T: Send + 'static, S: 'static> Future for PinkySwear<T, S> {
         {
             trace!("Called from future, registering waker");
             let mut inner = self.pinky.inner.lock();
+            if let Some(before) = inner.before.as_ref() {
+                before.register_waker(cx.waker().clone());
+            }
+            if let Some((barrier, _)) = inner.barrier.as_ref() {
+                barrier.register_waker(cx.waker().clone());
+            }
             inner.waker = Some(cx.waker().clone());
         }
         self.try_wait().map(Poll::Ready).unwrap_or(Poll::Pending)
@@ -225,6 +231,7 @@ impl<T: Send + 'static, S: 'static> Future for PinkySwear<T, S> {
 trait Promise<T> {
     fn try_wait(&self) -> Option<T>;
     fn wait(&self) -> T;
+    fn register_waker(&self, waker: Waker);
 }
 
 impl<T: Send + 'static, S: 'static> Promise<T> for PinkySwear<T, S> {
@@ -234,6 +241,10 @@ impl<T: Send + 'static, S: 'static> Promise<T> for PinkySwear<T, S> {
 
     fn wait(&self) -> T {
         self.wait()
+    }
+
+    fn register_waker(&self, waker: Waker) {
+        self.pinky.inner.lock().waker = Some(waker);
     }
 }
 
