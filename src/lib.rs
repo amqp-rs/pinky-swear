@@ -170,7 +170,9 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
 impl<T, S> Pinky<T, S> {
     /// Honour your PinkySwear by giving the promised data.
     pub fn swear(&self, data: T) {
-        let _ = self.send.send(data);
+        trace!("Resolving promise");
+        let res = self.send.send(data);
+        trace!("Resolving promise gave: {:?}", res);
         let inner = self.inner.lock();
         if let Some(waker) = inner.waker.as_ref() {
             trace!("Got data, waking our waker");
