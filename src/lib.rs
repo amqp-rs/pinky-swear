@@ -30,6 +30,7 @@
 
 doc_comment::doctest!("../README.md");
 
+use log::trace;
 use parking_lot::Mutex;
 use std::{
     fmt,
@@ -172,9 +173,11 @@ impl<T, S> Pinky<T, S> {
         let _ = self.send.send(data);
         let inner = self.inner.lock();
         if let Some(waker) = inner.waker.as_ref() {
+            trace!("Got data, waking our waker");
             waker.wake_by_ref();
         }
         for task in inner.tasks.iter() {
+            trace!("Got data, notifying task");
             task.notify();
         }
     }
@@ -206,6 +209,7 @@ impl<T: Send + 'static, S: 'static> Future for PinkySwear<T, S> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         {
+            trace!("Called from future, registering waker");
             let mut inner = self.pinky.inner.lock();
             inner.waker = Some(cx.waker().clone());
         }
