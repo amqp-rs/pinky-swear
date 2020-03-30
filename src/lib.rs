@@ -79,29 +79,20 @@ impl<T, S> Default for Inner<T, S> {
 impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     /// Create a new PinkySwear and its associated Pinky.
     pub fn new() -> (Self, Pinky<T, S>) {
-        let promise = Self::new_with_inner(Inner::default());
+        let (send, recv) = sync_channel(1);
+        let inner = Arc::new(Mutex::new(Inner::default()));
+        let pinky = Pinky { send, inner };
+        let promise = Self { recv, pinky };
         let pinky = promise.pinky();
         (promise, pinky)
     }
 
     /// Wait for this promise only once the given one is honoured.
     pub fn after<B: 'static>(promise: PinkySwear<S, B>) -> (Self, Pinky<T, S>) where S: Send {
-        let pinky = promise.pinky();
-        let inner = Inner {
-            before: Some(Box::new(promise)),
-            ..Inner::default()
-        };
-        let promise = Self::new_with_inner(inner);
-        promise.pinky.inner.lock().next = Some(Box::new(pinky));
-        let pinky = promise.pinky();
-        (promise, pinky)
-    }
-
-    fn new_with_inner(inner: Inner<T, S>) -> Self {
-        let (send, recv) = sync_channel(1);
-        let inner = Arc::new(Mutex::new(inner));
-        let pinky = Pinky { send, inner };
-        Self { recv, pinky }
+        let (new_promise, new_pinky) = Self::new();
+        promise.pinky.inner.lock().next = Some(Box::new(new_promise.pinky()));
+        new_promise.pinky.inner.lock().before = Some(Box::new(promise));
+        (new_promise, new_pinky)
     }
 
     /// Create a new PinkySwear and honour it at the same time.
@@ -163,13 +154,9 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
         self,
         transform: Box<dyn Fn(T) -> F + Send>,
     ) -> PinkySwear<F, T> {
-        let pinky = self.pinky();
-        let inner = Inner {
-            barrier: Some((Box::new(self), transform)),
-            ..Inner::default()
-        };
-        let promise = PinkySwear::new_with_inner(inner);
-        promise.pinky.inner.lock().next = Some(Box::new(pinky));
+        let (promise, pinky) = PinkySwear::new();
+        self.pinky.inner.lock().next = Some(Box::new(promise.pinky()));
+        pinky.inner.lock().barrier = Some((Box::new(self), transform));
         promise
     }
 }
