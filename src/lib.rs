@@ -76,6 +76,17 @@ impl<T, S> Default for Inner<T, S> {
     }
 }
 
+/// A PinkyBroadcaster allows you to broacast a promise resolution to several subscribers.
+#[must_use = "PinkyBroadcaster must be subscribed"]
+pub struct PinkyBroadcaster<T: Clone, S = ()> {
+    inner: Arc<Mutex<BroadcasterInner<T, S>>>,
+}
+
+struct BroadcasterInner<T, S> {
+    promise: PinkySwear<T, S>,
+    subscribers: Vec<Pinky<T, S>>,
+}
+
 impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
     /// Create a new PinkySwear and its associated Pinky.
     pub fn new() -> (Self, Pinky<T, S>) {
@@ -197,9 +208,45 @@ impl<T, S> Inner<T, S> {
     }
 }
 
+impl<T: Send + Clone + 'static, S: 'static> PinkyBroadcaster<T, S> {
+    /// Create a new PinkyBroadcaster from a PinkySwear.
+    pub fn new(promise: PinkySwear<T, S>) -> Self {
+        let pinky = promise.pinky();
+        let broadcaster = Self {
+            inner: Arc::new(Mutex::new(BroadcasterInner {
+                promise,
+                subscribers: Vec::default(),
+            })),
+        };
+        pinky.inner.lock().next = Some(Box::new(broadcaster.clone()));
+        broadcaster
+    }
+
+    /// Subscribe to receive a broacast when the underlying promise get henoured.
+    pub fn subscribe(&self) -> PinkySwear<T, S> {
+        let (promise, pinky) = PinkySwear::new();
+        self.inner.lock().subscribers.push(pinky);
+        promise
+    }
+}
+
+impl<T: Clone, S> Clone for PinkyBroadcaster<T, S> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
 impl<T, S> fmt::Debug for PinkySwear<T, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "PinkySwear")
+    }
+}
+
+impl<T: Clone, S> fmt::Debug for PinkyBroadcaster<T, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PinkyBroadcaster")
     }
 }
 
@@ -269,6 +316,16 @@ pub trait NotifyReady {
 impl<T, S> NotifyReady for Pinky<T, S> {
     fn notify(&self) {
         self.inner.lock().notify();
+    }
+}
+
+impl<T: Send + Clone + 'static, S: 'static> NotifyReady for PinkyBroadcaster<T, S> {
+    fn notify(&self) {
+        let inner = self.inner.lock();
+        let data = inner.promise.wait();
+        for subscriber in inner.subscribers.iter() {
+            subscriber.swear(data.clone())
+        }
     }
 }
 
