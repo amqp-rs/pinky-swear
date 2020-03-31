@@ -236,6 +236,13 @@ impl<T: Send + Clone + 'static, S: 'static> PinkyBroadcaster<T, S> {
     }
 }
 
+impl<T: Send + Clone + 'static, S: 'static> Default for PinkyBroadcaster<T, S> {
+    fn default() -> Self {
+        let (promise, _) = PinkySwear::new();
+        Self::new(promise)
+    }
+}
+
 impl<T: Clone, S> Clone for PinkyBroadcaster<T, S> {
     fn clone(&self) -> Self {
         Self {
