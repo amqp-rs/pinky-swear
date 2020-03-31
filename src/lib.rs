@@ -228,6 +228,12 @@ impl<T: Send + Clone + 'static, S: 'static> PinkyBroadcaster<T, S> {
         self.inner.lock().subscribers.push(pinky);
         promise
     }
+
+    /// Resolve the underlying promise and broadcast the result to subscribers.
+    pub fn swear(&self, data: T) {
+        let pinky = self.inner.lock().promise.pinky();
+        pinky.swear(data);
+    }
 }
 
 impl<T: Clone, S> Clone for PinkyBroadcaster<T, S> {
