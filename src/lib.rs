@@ -193,17 +193,24 @@ impl<T, S> Clone for Pinky<T, S> {
 
 impl<T, S> Inner<T, S> {
     fn notify(&self) {
+        let mut notified = false;
         if let Some(waker) = self.waker.as_ref() {
             trace!("Got data, waking our waker");
             waker.wake_by_ref();
+            notified = true;
         }
         if let Some(next) = self.next.as_ref() {
             trace!("Got data, notifying next in chain");
             next.notify();
+            notified = true;
         }
         for task in self.tasks.iter() {
             trace!("Got data, notifying task");
             task.notify();
+            notified = true;
+        }
+        if !notified {
+            trace!("Got data but we have no one to notify");
         }
     }
 }
