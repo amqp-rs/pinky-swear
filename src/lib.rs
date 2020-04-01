@@ -154,7 +154,7 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
 
     /// Will someone get notified once the Promise is honoured?
     pub fn has_subscriber(&self) -> bool {
-        self.pinky.subscribers.lock().has_subscribers()
+        self.pinky.subscribers.lock().has_subscriber()
     }
 
     /// Drop all the pending subscribers
@@ -210,7 +210,7 @@ impl<T> Clone for Pinky<T> {
 }
 
 impl Subscribers {
-    fn has_subscribers(&self) -> bool {
+    fn has_subscriber(&self) -> bool {
         self.waker.is_some() || self.next.is_some() || !self.tasks.is_empty()
     }
 
