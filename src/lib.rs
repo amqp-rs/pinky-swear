@@ -35,6 +35,7 @@ use parking_lot::Mutex;
 use std::{
     fmt,
     future::Future,
+    marker::PhantomData,
     pin::Pin,
     sync::{
         mpsc::{sync_channel, Receiver, SyncSender},
@@ -48,18 +49,24 @@ use std::{
 pub struct PinkySwear<T, S = ()> {
     recv: Receiver<T>,
     pinky: Pinky<T, S>,
+    inner: Arc<Mutex<Inner<T, S>>>,
 }
 
 /// A Pinky allows you to fulfill a Promise that you made.
 pub struct Pinky<T, S = ()> {
     send: SyncSender<T>,
-    inner: Arc<Mutex<Inner<T, S>>>,
+    subscribers: Arc<Mutex<Subscribers>>,
+    _marker: PhantomData<S>, // FIXME: drop S in 2.0
 }
 
-struct Inner<T, S> {
+#[derive(Default)]
+struct Subscribers {
     waker: Option<Waker>,
     next: Option<Box<dyn NotifyReady + Send>>,
     tasks: Vec<Box<dyn NotifyReady + Send>>,
+}
+
+struct Inner<T, S> {
     barrier: Option<(Box<dyn Promise<S> + Send>, Box<dyn Fn(S) -> T + Send>)>,
     before: Option<Box<dyn Promise<S> + Send>>,
 }
@@ -67,9 +74,6 @@ struct Inner<T, S> {
 impl<T, S> Default for Inner<T, S> {
     fn default() -> Self {
         Self {
-            waker: None,
-            next: None,
-            tasks: Vec::default(),
             barrier: None,
             before: None,
         }
@@ -87,22 +91,23 @@ struct BroadcasterInner<T, S> {
     subscribers: Vec<Pinky<T, S>>,
 }
 
-impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
+impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
     /// Create a new PinkySwear and its associated Pinky.
     pub fn new() -> (Self, Pinky<T, S>) {
         let (send, recv) = sync_channel(1);
+        let subscribers = Arc::new(Mutex::new(Subscribers::default()));
         let inner = Arc::new(Mutex::new(Inner::default()));
-        let pinky = Pinky { send, inner };
-        let promise = Self { recv, pinky };
+        let pinky = Pinky { send, subscribers, _marker: PhantomData::default() };
+        let promise = Self { recv, pinky, inner };
         let pinky = promise.pinky();
         (promise, pinky)
     }
 
     /// Wait for this promise only once the given one is honoured.
-    pub fn after<B: 'static>(promise: PinkySwear<S, B>) -> (Self, Pinky<T, S>) where S: Send {
+    pub fn after<B: Send + 'static>(promise: PinkySwear<S, B>) -> (Self, Pinky<T, S>) where S: Send {
         let (new_promise, new_pinky) = Self::new();
-        promise.pinky.inner.lock().next = Some(Box::new(new_promise.pinky()));
-        new_promise.pinky.inner.lock().before = Some(Box::new(promise));
+        promise.pinky.subscribers.lock().next = Some(Box::new(new_promise.pinky()));
+        new_promise.inner.lock().before = Some(Box::new(promise));
         (new_promise, new_pinky)
     }
 
@@ -119,7 +124,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
 
     /// Check whether the Promise has been honoured or not.
     pub fn try_wait(&self) -> Option<T> {
-        let mut inner = self.pinky.inner.lock();
+        let mut inner = self.inner.lock();
         if let Some(before) = inner.before.as_ref() {
             let _ = before.try_wait()?;
             inner.before = None;
@@ -133,7 +138,7 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
 
     /// Wait until the Promise has been honoured.
     pub fn wait(&self) -> T {
-        let mut inner = self.pinky.inner.lock();
+        let mut inner = self.inner.lock();
         if let Some(before) = inner.before.take() {
             before.wait();
         }
@@ -146,18 +151,17 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
 
     /// Get notified once the Promise has been honoured.
     pub fn subscribe(&self, task: Box<dyn NotifyReady + Send>) {
-        self.pinky.inner.lock().tasks.push(task);
+        self.pinky.subscribers.lock().tasks.push(task);
     }
 
     /// Will someone get notified once the Promise is honoured?
     pub fn has_subscriber(&self) -> bool {
-        let inner = self.pinky.inner.lock();
-        inner.waker.is_some() || inner.next.is_some() || !inner.tasks.is_empty()
+        self.pinky.subscribers.lock().has_subscribers()
     }
 
     /// Drop all the pending subscribers
     pub fn drop_subscribers(&self) {
-        self.pinky.inner.lock().tasks.clear()
+        self.pinky.subscribers.lock().tasks.clear()
     }
 
     /// Apply a tranformation to the result of a PinkySwear.
@@ -165,10 +169,26 @@ impl<T: Send + 'static, S: 'static> PinkySwear<T, S> {
         self,
         transform: Box<dyn Fn(T) -> F + Send>,
     ) -> PinkySwear<F, T> {
-        let (promise, pinky) = PinkySwear::new();
-        self.pinky.inner.lock().next = Some(Box::new(promise.pinky()));
-        pinky.inner.lock().barrier = Some((Box::new(self), transform));
+        let (promise, _pinky) = PinkySwear::new();
+        self.pinky.subscribers.lock().next = Some(Box::new(promise.pinky()));
+        promise.inner.lock().barrier = Some((Box::new(self), transform));
         promise
+    }
+
+    fn set_waker(&self, waker: Waker) {
+        trace!("Called from future, registering waker");
+        self.pinky.subscribers.lock().waker = Some(waker);
+    }
+
+    fn backward_waker(&self, waker: Waker) {
+        trace!("Called from future, registering waker up in chain");
+        let inner = self.inner.lock();
+        if let Some(before) = inner.before.as_ref() {
+            before.register_waker(waker.clone());
+        }
+        if let Some((barrier, _)) = inner.barrier.as_ref() {
+            barrier.register_waker(waker);
+        }
     }
 }
 
@@ -178,7 +198,7 @@ impl<T, S> Pinky<T, S> {
         trace!("Resolving promise");
         let res = self.send.send(data);
         trace!("Resolving promise gave: {:?}", res);
-        self.inner.lock().notify();
+        self.subscribers.lock().notify();
     }
 }
 
@@ -186,12 +206,17 @@ impl<T, S> Clone for Pinky<T, S> {
     fn clone(&self) -> Self {
         Self {
             send: self.send.clone(),
-            inner: self.inner.clone(),
+            subscribers: self.subscribers.clone(),
+            _marker: PhantomData::default(),
         }
     }
 }
 
-impl<T, S> Inner<T, S> {
+impl Subscribers {
+    fn has_subscribers(&self) -> bool {
+        self.waker.is_some() || self.next.is_some() || !self.tasks.is_empty()
+    }
+
     fn notify(&self) {
         let mut notified = false;
         if let Some(waker) = self.waker.as_ref() {
@@ -215,7 +240,7 @@ impl<T, S> Inner<T, S> {
     }
 }
 
-impl<T: Send + Clone + 'static, S: 'static> PinkyBroadcaster<T, S> {
+impl<T: Send + Clone + 'static, S: Send + 'static> PinkyBroadcaster<T, S> {
     /// Create a new PinkyBroadcaster from a PinkySwear.
     pub fn new(promise: PinkySwear<T, S>) -> Self {
         let pinky = promise.pinky();
@@ -225,7 +250,7 @@ impl<T: Send + Clone + 'static, S: 'static> PinkyBroadcaster<T, S> {
                 subscribers: Vec::default(),
             })),
         };
-        pinky.inner.lock().next = Some(Box::new(broadcaster.clone()));
+        pinky.subscribers.lock().next = Some(Box::new(broadcaster.clone()));
         broadcaster
     }
 
@@ -243,7 +268,7 @@ impl<T: Send + Clone + 'static, S: 'static> PinkyBroadcaster<T, S> {
     }
 }
 
-impl<T: Send + Clone + 'static, S: 'static> Default for PinkyBroadcaster<T, S> {
+impl<T: Send + Clone + 'static, S: Send + 'static> Default for PinkyBroadcaster<T, S> {
     fn default() -> Self {
         let (promise, _) = PinkySwear::new();
         Self::new(promise)
@@ -276,21 +301,12 @@ impl<T, S> fmt::Debug for Pinky<T, S> {
     }
 }
 
-impl<T: Send + 'static, S: 'static> Future for PinkySwear<T, S> {
+impl<T: Send + 'static, S: Send + 'static> Future for PinkySwear<T, S> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        {
-            trace!("Called from future, registering waker");
-            let mut inner = self.pinky.inner.lock();
-            if let Some(before) = inner.before.as_ref() {
-                before.register_waker(cx.waker().clone());
-            }
-            if let Some((barrier, _)) = inner.barrier.as_ref() {
-                barrier.register_waker(cx.waker().clone());
-            }
-            inner.waker = Some(cx.waker().clone());
-        }
+        self.set_waker(cx.waker().clone());
+        self.backward_waker(cx.waker().clone());
         self.try_wait().map(Poll::Ready).unwrap_or(Poll::Pending)
     }
 }
@@ -301,7 +317,7 @@ trait Promise<T> {
     fn register_waker(&self, waker: Waker);
 }
 
-impl<T: Send + 'static, S: 'static> Promise<T> for PinkySwear<T, S> {
+impl<T: Send + 'static, S: Send + 'static> Promise<T> for PinkySwear<T, S> {
     fn try_wait(&self) -> Option<T> {
         self.try_wait()
     }
@@ -311,7 +327,7 @@ impl<T: Send + 'static, S: 'static> Promise<T> for PinkySwear<T, S> {
     }
 
     fn register_waker(&self, waker: Waker) {
-        self.pinky.inner.lock().waker = Some(waker);
+        self.set_waker(waker);
     }
 }
 
@@ -335,11 +351,11 @@ pub trait NotifyReady {
 
 impl<T, S> NotifyReady for Pinky<T, S> {
     fn notify(&self) {
-        self.inner.lock().notify();
+        self.subscribers.lock().notify();
     }
 }
 
-impl<T: Send + Clone + 'static, S: 'static> NotifyReady for PinkyBroadcaster<T, S> {
+impl<T: Send + Clone + 'static, S: Send + 'static> NotifyReady for PinkyBroadcaster<T, S> {
     fn notify(&self) {
         let inner = self.inner.lock();
         let data = inner.promise.wait();
