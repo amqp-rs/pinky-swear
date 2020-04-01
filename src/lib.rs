@@ -14,7 +14,7 @@
 //! }
 //!
 //! fn main() {
-//!     let (promise, pinky) = PinkySwear::new();
+//!     let (promise, pinky) = PinkySwear::<Result<u32, ()>>::new();
 //!     thread::spawn(move || {
 //!         compute(pinky);
 //!     });
@@ -35,7 +35,6 @@ use parking_lot::Mutex;
 use std::{
     fmt,
     future::Future,
-    marker::PhantomData,
     pin::Pin,
     sync::{
         mpsc::{sync_channel, Receiver, SyncSender},
@@ -48,15 +47,14 @@ use std::{
 #[must_use = "PinkySwear should be used or you can miss errors"]
 pub struct PinkySwear<T, S = ()> {
     recv: Receiver<T>,
-    pinky: Pinky<T, S>,
+    pinky: Pinky<T>,
     inner: Arc<Mutex<Inner<T, S>>>,
 }
 
 /// A Pinky allows you to fulfill a Promise that you made.
-pub struct Pinky<T, S = ()> {
+pub struct Pinky<T> {
     send: SyncSender<T>,
     subscribers: Arc<Mutex<Subscribers>>,
-    _marker: PhantomData<S>, // FIXME: drop S in 2.0
 }
 
 #[derive(Default)]
@@ -88,23 +86,23 @@ pub struct PinkyBroadcaster<T: Clone, S = ()> {
 
 struct BroadcasterInner<T, S> {
     promise: PinkySwear<T, S>,
-    subscribers: Vec<Pinky<T, S>>,
+    subscribers: Vec<Pinky<T>>,
 }
 
 impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
     /// Create a new PinkySwear and its associated Pinky.
-    pub fn new() -> (Self, Pinky<T, S>) {
+    pub fn new() -> (Self, Pinky<T>) {
         let (send, recv) = sync_channel(1);
         let subscribers = Arc::new(Mutex::new(Subscribers::default()));
         let inner = Arc::new(Mutex::new(Inner::default()));
-        let pinky = Pinky { send, subscribers, _marker: PhantomData::default() };
+        let pinky = Pinky { send, subscribers };
         let promise = Self { recv, pinky, inner };
         let pinky = promise.pinky();
         (promise, pinky)
     }
 
     /// Wait for this promise only once the given one is honoured.
-    pub fn after<B: Send + 'static>(promise: PinkySwear<S, B>) -> (Self, Pinky<T, S>) where S: Send {
+    pub fn after<B: Send + 'static>(promise: PinkySwear<S, B>) -> (Self, Pinky<T>) {
         let (new_promise, new_pinky) = Self::new();
         promise.pinky.subscribers.lock().next = Some(Box::new(new_promise.pinky()));
         new_promise.inner.lock().before = Some(Box::new(promise));
@@ -118,7 +116,7 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
         promise
     }
 
-    fn pinky(&self) -> Pinky<T, S> {
+    fn pinky(&self) -> Pinky<T> {
         self.pinky.clone()
     }
 
@@ -192,7 +190,7 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
     }
 }
 
-impl<T, S> Pinky<T, S> {
+impl<T> Pinky<T> {
     /// Honour your PinkySwear by giving the promised data.
     pub fn swear(&self, data: T) {
         trace!("Resolving promise");
@@ -202,12 +200,11 @@ impl<T, S> Pinky<T, S> {
     }
 }
 
-impl<T, S> Clone for Pinky<T, S> {
+impl<T> Clone for Pinky<T> {
     fn clone(&self) -> Self {
         Self {
             send: self.send.clone(),
             subscribers: self.subscribers.clone(),
-            _marker: PhantomData::default(),
         }
     }
 }
@@ -295,7 +292,7 @@ impl<T: Clone, S> fmt::Debug for PinkyBroadcaster<T, S> {
     }
 }
 
-impl<T, S> fmt::Debug for Pinky<T, S> {
+impl<T> fmt::Debug for Pinky<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Pinky")
     }
@@ -337,7 +334,7 @@ pub trait Cancellable<E> {
     fn cancel(&self, err: E);
 }
 
-impl<T, S, E> Cancellable<E> for Pinky<Result<T, E>, S> {
+impl<T, E> Cancellable<E> for Pinky<Result<T, E>> {
     fn cancel(&self, err: E) {
         self.swear(Err(err))
     }
@@ -349,7 +346,7 @@ pub trait NotifyReady {
     fn notify(&self);
 }
 
-impl<T, S> NotifyReady for Pinky<T, S> {
+impl<T> NotifyReady for Pinky<T> {
     fn notify(&self) {
         self.subscribers.lock().notify();
     }
