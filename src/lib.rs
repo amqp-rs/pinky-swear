@@ -212,6 +212,12 @@ impl<T> Pinky<T> {
     }
 }
 
+impl<T> PartialEq for Pinky<T> {
+    fn eq(&self, other: &Pinky<T>) -> bool {
+        Arc::ptr_eq(&self.subscribers, &other.subscribers)
+    }
+}
+
 impl<T> Clone for Pinky<T> {
     fn clone(&self) -> Self {
         Self {
