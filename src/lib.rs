@@ -277,10 +277,21 @@ impl<T: Send + Clone + 'static, S: Send + 'static> PinkyBroadcaster<T, S> {
         promise
     }
 
+    /// Unsubscribe a promise from the broadcast.
+    pub fn unsubscribe(&self, promise: PinkySwear<T, S>) {
+        self.inner.lock().unsubscribe(promise);
+    }
+
     /// Resolve the underlying promise and broadcast the result to subscribers.
     pub fn swear(&self, data: T) {
         let pinky = self.inner.lock().promise.pinky();
         pinky.swear(data);
+    }
+}
+
+impl <T, S> BroadcasterInner<T, S> {
+    fn unsubscribe(&mut self, promise: PinkySwear<T, S>) {
+        self.subscribers.retain(|pinky| pinky != &promise.pinky)
     }
 }
 
