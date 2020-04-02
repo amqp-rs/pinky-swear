@@ -194,8 +194,9 @@ impl<T> Pinky<T> {
     /// Honour your PinkySwear by giving the promised data.
     pub fn swear(&self, data: T) {
         trace!("Resolving promise");
-        let res = self.send.send(data);
-        trace!("Resolving promise gave: {:?}", res);
+        if let Err(err) = self.send.send(data) {
+            warn!("Failed resolving promise, promise has vanished: {:?}", err);
+        }
         self.subscribers.lock().notify();
     }
 }
