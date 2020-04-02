@@ -380,3 +380,9 @@ impl NotifyReady for Waker {
         self.wake_by_ref();
     }
 }
+
+impl<T, S> Drop for PinkySwear<T, S> {
+    fn drop(&mut self) {
+        trace!("{}Dropping promise", self.pinky.marker());
+    }
+}
