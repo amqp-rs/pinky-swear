@@ -30,14 +30,14 @@
 
 doc_comment::doctest!("../README.md");
 
-use log::trace;
+use log::{trace, warn};
 use parking_lot::Mutex;
 use std::{
     fmt,
     future::Future,
     pin::Pin,
     sync::{
-        mpsc::{sync_channel, Receiver, SyncSender},
+        mpsc::{self, Receiver, Sender},
         Arc,
     },
     task::{Context, Poll, Waker},
@@ -53,7 +53,7 @@ pub struct PinkySwear<T, S = ()> {
 
 /// A Pinky allows you to fulfill a Promise that you made.
 pub struct Pinky<T> {
-    send: SyncSender<T>,
+    send: Sender<T>,
     subscribers: Arc<Mutex<Subscribers>>,
 }
 
@@ -92,7 +92,7 @@ struct BroadcasterInner<T, S> {
 impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
     /// Create a new PinkySwear and its associated Pinky.
     pub fn new() -> (Self, Pinky<T>) {
-        let (send, recv) = sync_channel(1);
+        let (send, recv) = mpsc::channel();
         let subscribers = Arc::new(Mutex::new(Subscribers::default()));
         let inner = Arc::new(Mutex::new(Inner::default()));
         let pinky = Pinky { send, subscribers };
