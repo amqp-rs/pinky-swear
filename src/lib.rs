@@ -31,7 +31,7 @@
 doc_comment::doctest!("../README.md");
 
 use log::{trace, warn};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use std::{
     fmt,
     future::Future,
@@ -55,6 +55,7 @@ pub struct PinkySwear<T, S = ()> {
 pub struct Pinky<T> {
     send: Sender<T>,
     subscribers: Arc<Mutex<Subscribers>>,
+    marker: Arc<RwLock<Option<String>>>,
 }
 
 #[derive(Default)]
@@ -95,7 +96,8 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
         let (send, recv) = mpsc::channel();
         let subscribers = Arc::new(Mutex::new(Subscribers::default()));
         let inner = Arc::new(Mutex::new(Inner::default()));
-        let pinky = Pinky { send, subscribers };
+        let marker = Default::default();
+        let pinky = Pinky { send, subscribers, marker };
         let promise = Self { recv, pinky, inner };
         let pinky = promise.pinky();
         (promise, pinky)
@@ -173,13 +175,18 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
         promise
     }
 
+    /// Add a marker to logs
+    pub fn set_marker(&self, marker: String) {
+        *self.pinky.marker.write() = Some(marker);
+    }
+
     fn set_waker(&self, waker: Waker) {
-        trace!("Called from future, registering waker");
+        trace!("{}Called from future, registering waker", self.pinky.marker());
         self.pinky.subscribers.lock().waker = Some(waker);
     }
 
     fn backward_waker(&self, waker: Waker) {
-        trace!("Called from future, registering waker up in chain");
+        trace!("{}Called from future, registering waker up in chain", self.pinky.marker());
         let inner = self.inner.lock();
         if let Some(before) = inner.before.as_ref() {
             before.register_waker(waker.clone());
@@ -193,11 +200,15 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
 impl<T> Pinky<T> {
     /// Honour your PinkySwear by giving the promised data.
     pub fn swear(&self, data: T) {
-        trace!("Resolving promise");
+        trace!("{}Resolving promise", self.marker());
         if let Err(err) = self.send.send(data) {
-            warn!("Failed resolving promise, promise has vanished: {:?}", err);
+            warn!("{}Failed resolving promise, promise has vanished: {:?}", self.marker(), err);
         }
         self.subscribers.lock().notify();
+    }
+
+    fn marker(&self) -> String {
+        self.marker.read().as_ref().map_or(String::default(), |marker| format!("[{}] ", marker))
     }
 }
 
@@ -206,6 +217,7 @@ impl<T> Clone for Pinky<T> {
         Self {
             send: self.send.clone(),
             subscribers: self.subscribers.clone(),
+            marker: self.marker.clone(),
         }
     }
 }
