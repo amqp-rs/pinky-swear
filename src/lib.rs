@@ -123,37 +123,12 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
 
     /// Check whether the Promise has been honoured or not.
     pub fn try_wait(&self) -> Option<T> {
-        let mut inner = self.inner.lock();
-        let before_res = if let Some(Before::Promise(before, _)) = inner.before.as_ref() {
-            Some(before.try_wait()?)
-        } else {
-            None
-        };
-        if let Some(before_res) = before_res {
-            if let Some(Before::Promise(_, transform)) = inner.before.take() {
-                inner.before = Some(Before::Resolved(before_res, transform));
-            }
-        }
-        let res = if let Some((barrier, transform)) = inner.barrier.as_ref() {
-            barrier.try_wait().map(transform)
-        } else {
-            self.recv.try_recv().ok()
-        };
-        res.map(|res| inner.apply_before(res))
+        self.inner.lock().try_wait(&self.recv)
     }
 
     /// Wait until the Promise has been honoured.
     pub fn wait(&self) -> T {
-        let mut inner = self.inner.lock();
-        if let Some(Before::Promise(before, transform)) = inner.before.take() {
-            inner.before = Some(Before::Resolved(before.wait(), transform));
-        }
-        let res = if let Some((barrier, transform)) = inner.barrier.as_ref() {
-            transform(barrier.wait())
-        } else {
-            self.recv.recv().unwrap()
-        };
-        inner.apply_before(res)
+        self.inner.lock().wait(&self.recv)
     }
 
     /// Get notified once the Promise has been honoured.
@@ -200,13 +175,7 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
             "{}Called from future, registering waker up in chain",
             self.pinky.marker()
         );
-        let inner = self.inner.lock();
-        if let Some(Before::Promise(before, _)) = inner.before.as_ref() {
-            before.register_waker(waker.clone());
-        }
-        if let Some((barrier, _)) = inner.barrier.as_ref() {
-            barrier.register_waker(waker);
-        }
+        self.inner.lock().backward_waker(waker);
     }
 }
 
@@ -240,6 +209,42 @@ impl<T, S> Inner<T, S> {
             transform(res, t)
         } else {
             t
+        }
+    }
+
+    fn try_wait(&mut self, recv: &Receiver<T>) -> Option<T> {
+        if let Some(Before::Promise(before, _)) = self.before.as_ref() {
+            let before_res = before.try_wait()?;
+            if let Some(Before::Promise(_, transform)) = self.before.take() { // always true, we just want to take ownership of transform
+                self.before = Some(Before::Resolved(before_res, transform));
+            }
+        };
+        let res = if let Some((barrier, transform)) = self.barrier.as_ref() {
+            barrier.try_wait().map(transform)
+        } else {
+            recv.try_recv().ok()
+        };
+        res.map(|res| self.apply_before(res))
+    }
+
+    fn wait(&mut self, recv: &Receiver<T>) -> T {
+        if let Some(Before::Promise(before, transform)) = self.before.take() {
+            self.before = Some(Before::Resolved(before.wait(), transform));
+        }
+        let res = if let Some((barrier, transform)) = self.barrier.as_ref() {
+            transform(barrier.wait())
+        } else {
+            recv.recv().unwrap()
+        };
+        self.apply_before(res)
+    }
+
+    fn backward_waker(&self, waker: Waker) {
+        if let Some(Before::Promise(before, _)) = self.before.as_ref() {
+            before.register_waker(waker.clone());
+        }
+        if let Some((barrier, _)) = self.barrier.as_ref() {
+            barrier.register_waker(waker);
         }
     }
 }
