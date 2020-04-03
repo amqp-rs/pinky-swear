@@ -272,9 +272,7 @@ impl<T: Send + Clone + 'static, S: Send + 'static> PinkyBroadcaster<T, S> {
 
     /// Subscribe to receive a broacast when the underlying promise get henoured.
     pub fn subscribe(&self) -> PinkySwear<T, S> {
-        let (promise, pinky) = PinkySwear::new();
-        self.inner.lock().subscribers.push(pinky);
-        promise
+        self.inner.lock().subscribe()
     }
 
     /// Unsubscribe a promise from the broadcast.
@@ -289,7 +287,16 @@ impl<T: Send + Clone + 'static, S: Send + 'static> PinkyBroadcaster<T, S> {
     }
 }
 
-impl <T, S> BroadcasterInner<T, S> {
+impl <T: Send + 'static, S: Send + 'static> BroadcasterInner<T, S> {
+    fn subscribe(&mut self) -> PinkySwear<T, S> {
+        let (promise, pinky) = PinkySwear::new();
+        self.subscribers.push(pinky);
+        if let Some(marker) = self.promise.pinky.marker.read().clone() {
+            promise.set_marker(marker);
+        }
+        promise
+    }
+
     fn unsubscribe(&mut self, promise: PinkySwear<T, S>) {
         self.subscribers.retain(|pinky| pinky != &promise.pinky)
     }
