@@ -67,7 +67,12 @@ struct Subscribers {
 
 struct Inner<T, S> {
     barrier: Option<(Box<dyn Promise<S> + Send>, Box<dyn Fn(S) -> T + Send>)>,
-    before: Option<Box<dyn Promise<S> + Send>>,
+    before: Option<Before<T, S>>,
+}
+
+enum Before<T, S> {
+    Promise(Box<dyn Promise<S> + Send>, Box<dyn Fn(S, T) -> T + Send>),
+    Resolved(S, Box<dyn Fn(S, T) -> T + Send>),
 }
 
 impl<T, S> Default for Inner<T, S> {
@@ -119,28 +124,36 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
     /// Check whether the Promise has been honoured or not.
     pub fn try_wait(&self) -> Option<T> {
         let mut inner = self.inner.lock();
-        if let Some(before) = inner.before.as_ref() {
-            let _ = before.try_wait()?;
-            inner.before = None;
+        let before_res = if let Some(Before::Promise(before, _)) = inner.before.as_ref() {
+            Some(before.try_wait()?)
+        } else {
+            None
+        };
+        if let Some(before_res) = before_res {
+            if let Some(Before::Promise(_, transform)) = inner.before.take() {
+                inner.before = Some(Before::Resolved(before_res, transform));
+            }
         }
-        if let Some((barrier, transform)) = inner.barrier.as_ref() {
+        let res = if let Some((barrier, transform)) = inner.barrier.as_ref() {
             barrier.try_wait().map(transform)
         } else {
             self.recv.try_recv().ok()
-        }
+        };
+        res.map(|res| inner.apply_before(res))
     }
 
     /// Wait until the Promise has been honoured.
     pub fn wait(&self) -> T {
         let mut inner = self.inner.lock();
-        if let Some(before) = inner.before.take() {
-            before.wait();
+        if let Some(Before::Promise(before, transform)) = inner.before.take() {
+            inner.before = Some(Before::Resolved(before.wait(), transform));
         }
-        if let Some((barrier, transform)) = inner.barrier.as_ref() {
+        let res = if let Some((barrier, transform)) = inner.barrier.as_ref() {
             transform(barrier.wait())
         } else {
             self.recv.recv().unwrap()
-        }
+        };
+        inner.apply_before(res)
     }
 
     /// Get notified once the Promise has been honoured.
@@ -188,7 +201,7 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
             self.pinky.marker()
         );
         let inner = self.inner.lock();
-        if let Some(before) = inner.before.as_ref() {
+        if let Some(Before::Promise(before, _)) = inner.before.as_ref() {
             before.register_waker(waker.clone());
         }
         if let Some((barrier, _)) = inner.barrier.as_ref() {
@@ -202,8 +215,32 @@ impl<T: Send + 'static> PinkySwear<T, ()> {
     pub fn after<B: Send + 'static>(promise: PinkySwear<(), B>) -> (Self, Pinky<T>) {
         let (new_promise, new_pinky) = Self::new();
         promise.pinky.subscribers.lock().next = Some(Box::new(new_promise.pinky()));
-        new_promise.inner.lock().before = Some(Box::new(promise));
+        new_promise.inner.lock().before =
+            Some(Before::Promise(Box::new(promise), Box::new(|(), t| t)));
         (new_promise, new_pinky)
+    }
+}
+
+impl<T: Send + 'static, E: Send + 'static> PinkySwear<Result<T, E>, Result<(), E>> {
+    /// Wait for this promise only once the given one is honoured.
+    pub fn after<B: Send + 'static>(
+        promise: PinkySwear<Result<(), E>, B>,
+    ) -> (Self, Pinky<Result<T, E>>) {
+        let (new_promise, new_pinky) = Self::new();
+        promise.pinky.subscribers.lock().next = Some(Box::new(new_promise.pinky()));
+        new_promise.inner.lock().before =
+            Some(Before::Promise(Box::new(promise), Box::new(Result::and)));
+        (new_promise, new_pinky)
+    }
+}
+
+impl<T, S> Inner<T, S> {
+    fn apply_before(&mut self, t: T) -> T {
+        if let Some(Before::Resolved(res, transform)) = self.before.take() {
+            transform(res, t)
+        } else {
+            t
+        }
     }
 }
 
