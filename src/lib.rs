@@ -45,7 +45,7 @@ use std::{
 
 /// A PinkySwear is a Promise that the other party is supposed to honour at some point.
 #[must_use = "PinkySwear should be used or you can miss errors"]
-pub struct PinkySwear<T, S = ()> {
+pub struct PinkySwear<T, S = T> {
     recv: Receiver<T>,
     pinky: Pinky<T>,
     inner: Arc<Mutex<Inner<T, S>>>,
@@ -81,7 +81,7 @@ impl<T, S> Default for Inner<T, S> {
 
 /// A PinkyBroadcaster allows you to broacast a promise resolution to several subscribers.
 #[must_use = "PinkyBroadcaster must be subscribed"]
-pub struct PinkyBroadcaster<T: Clone, S = ()> {
+pub struct PinkyBroadcaster<T: Clone, S = T> {
     inner: Arc<Mutex<BroadcasterInner<T, S>>>,
 }
 
@@ -101,14 +101,6 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
         let promise = Self { recv, pinky, inner };
         let pinky = promise.pinky();
         (promise, pinky)
-    }
-
-    /// Wait for this promise only once the given one is honoured.
-    pub fn after<B: Send + 'static>(promise: PinkySwear<S, B>) -> (Self, Pinky<T>) {
-        let (new_promise, new_pinky) = Self::new();
-        promise.pinky.subscribers.lock().next = Some(Box::new(new_promise.pinky()));
-        new_promise.inner.lock().before = Some(Box::new(promise));
-        (new_promise, new_pinky)
     }
 
     /// Create a new PinkySwear and honour it at the same time.
@@ -194,6 +186,16 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
         if let Some((barrier, _)) = inner.barrier.as_ref() {
             barrier.register_waker(waker);
         }
+    }
+}
+
+impl<T: Send + 'static> PinkySwear<T, ()> {
+    /// Wait for this promise only once the given one is honoured.
+    pub fn after<B: Send + 'static>(promise: PinkySwear<(), B>) -> (Self, Pinky<T>) {
+        let (new_promise, new_pinky) = Self::new();
+        promise.pinky.subscribers.lock().next = Some(Box::new(new_promise.pinky()));
+        new_promise.inner.lock().before = Some(Box::new(promise));
+        (new_promise, new_pinky)
     }
 }
 
