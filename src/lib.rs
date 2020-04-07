@@ -132,8 +132,8 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
     }
 
     /// Get notified once the Promise has been honoured.
-    pub fn subscribe(&self, task: Box<dyn NotifyReady + Send>) {
-        self.pinky.subscribers.lock().tasks.push(task);
+    pub fn subscribe<N: NotifyReady + Send + 'static>(&self, task: N) {
+        self.pinky.subscribers.lock().tasks.push(Box::new(task));
     }
 
     /// Will someone get notified once the Promise is honoured?
@@ -147,13 +147,13 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
     }
 
     /// Apply a tranformation to the result of a PinkySwear.
-    pub fn traverse<F: Send + 'static>(
+    pub fn traverse<F: Send + 'static, TF: Fn(T) -> F + Send + 'static>(
         self,
-        transform: Box<dyn Fn(T) -> F + Send>,
+        transform: TF,
     ) -> PinkySwear<F, T> {
         let (promise, _pinky) = PinkySwear::new();
         self.pinky.subscribers.lock().next = Some(Box::new(promise.pinky()));
-        promise.inner.lock().barrier = Some((Box::new(self), transform));
+        promise.inner.lock().barrier = Some((Box::new(self), Box::new(transform)));
         promise
     }
 
@@ -215,7 +215,8 @@ impl<T, S> Inner<T, S> {
     fn try_wait(&mut self, recv: &Receiver<T>) -> Option<T> {
         if let Some(Before::Promise(before, _)) = self.before.as_ref() {
             let before_res = before.try_wait()?;
-            if let Some(Before::Promise(_, transform)) = self.before.take() { // always true, we just want to take ownership of transform
+            if let Some(Before::Promise(_, transform)) = self.before.take() {
+                // always true, we just want to take ownership of transform
                 self.before = Some(Before::Resolved(before_res, transform));
             }
         };

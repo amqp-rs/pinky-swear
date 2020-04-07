@@ -1,4 +1,4 @@
-use pinky_swear::{PinkySwear};
+use pinky_swear::PinkySwear;
 
 #[test]
 fn chain_ok() {
