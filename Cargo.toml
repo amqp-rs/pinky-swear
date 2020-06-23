@@ -13,4 +13,4 @@ categories = [ "asynchronous" ]
 [dependencies]
 doc-comment = "^0.3"
 log = "^0.4"
-parking_lot = '^0.10'
+parking_lot = '^0.11'
