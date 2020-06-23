@@ -1,5 +1,9 @@
 Simple promise library compatible with `std::future` and async/await
 
+[![API Docs](https://docs.rs/pinky-swear/badge.svg)](https://docs.rs/pinky-swear)
+[![Build status](https://github.com/Keruspe/pinky-swear/workflows/Build%20and%20test/badge.svg)](https://github.com/Keruspe/pinky-swear/actions)
+[![Downloads](https://img.shields.io/crates/d/pinky-swear.svg)](https://crates.io/crates/pinky-swear)
+
 # Example
 
 Create a promise and wait for the result while computing the result in another thread
