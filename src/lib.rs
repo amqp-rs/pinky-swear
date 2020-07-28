@@ -164,16 +164,16 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
 
     fn set_waker(&self, waker: Waker) {
         trace!(
-            "{}Called from future, registering waker",
-            self.pinky.marker()
+            promise = %self.pinky.marker(),
+            "Called from future, registering waker",
         );
         self.pinky.subscribers.lock().waker = Some(waker);
     }
 
     fn backward_waker(&self, waker: Waker) {
         trace!(
-            "{}Called from future, registering waker up in chain",
-            self.pinky.marker()
+            promise = %self.pinky.marker(),
+            "Called from future, registering waker up in chain",
         );
         self.inner.lock().backward_waker(waker);
     }
@@ -253,11 +253,14 @@ impl<T, S> Inner<T, S> {
 impl<T> Pinky<T> {
     /// Honour your PinkySwear by giving the promised data.
     pub fn swear(&self, data: T) {
-        trace!("{}Resolving promise", self.marker());
+        trace!(
+            promise = %self.marker(),
+            "Resolving promise",
+        );
         if let Err(err) = self.send.send(data) {
             warn!(
-                "{}Failed resolving promise, promise has vanished: {:?}",
-                self.marker(),
+                promise = %self.marker(),
+                "Failed resolving promise, promise has vanished: {:?}",
                 err
             );
         }
@@ -467,6 +470,9 @@ impl NotifyReady for Waker {
 
 impl<T, S> Drop for PinkySwear<T, S> {
     fn drop(&mut self) {
-        trace!("{}Dropping promise", self.pinky.marker());
+        trace!(
+            promise = %self.pinky.marker(),
+            "Dropping promise",
+        );
     }
 }
