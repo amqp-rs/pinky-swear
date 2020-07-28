@@ -13,4 +13,7 @@ categories = [ "asynchronous" ]
 [dependencies]
 doc-comment = "^0.3"
 parking_lot = '^0.11'
-tracing = "^0.1"
+
+[dependencies.tracing]
+version = "^0.1"
+default-features = false
