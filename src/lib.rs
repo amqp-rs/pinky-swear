@@ -30,7 +30,6 @@
 
 doc_comment::doctest!("../README.md");
 
-use log::{trace, warn};
 use parking_lot::{Mutex, RwLock};
 use std::{
     fmt,
@@ -42,6 +41,7 @@ use std::{
     },
     task::{Context, Poll, Waker},
 };
+use tracing::{trace, warn};
 
 /// A PinkySwear is a Promise that the other party is supposed to honour at some point.
 #[must_use = "PinkySwear should be used or you can miss errors"]

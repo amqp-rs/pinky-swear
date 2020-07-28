@@ -12,5 +12,5 @@ categories = [ "asynchronous" ]
 
 [dependencies]
 doc-comment = "^0.3"
-log = "^0.4"
 parking_lot = '^0.11'
+tracing = "^0.1"
