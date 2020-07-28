@@ -165,7 +165,7 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
     fn set_waker(&self, waker: Waker) {
         trace!(
             promise = %self.pinky.marker(),
-            "Called from future, registering waker",
+            "Called from future, registering waker.",
         );
         self.pinky.subscribers.lock().waker = Some(waker);
     }
@@ -173,7 +173,7 @@ impl<T: Send + 'static, S: Send + 'static> PinkySwear<T, S> {
     fn backward_waker(&self, waker: Waker) {
         trace!(
             promise = %self.pinky.marker(),
-            "Called from future, registering waker up in chain",
+            "Called from future, registering waker up in chain.",
         );
         self.inner.lock().backward_waker(waker);
     }
@@ -255,13 +255,13 @@ impl<T> Pinky<T> {
     pub fn swear(&self, data: T) {
         trace!(
             promise = %self.marker(),
-            "Resolving promise",
+            "Resolving promise.",
         );
         if let Err(err) = self.send.send(data) {
             warn!(
                 promise = %self.marker(),
-                "Failed resolving promise, promise has vanished: {:?}",
-                err
+                error = %err,
+                "Failed resolving promise, promise has vanished.",
             );
         }
         self.subscribers.lock().notify();
@@ -299,22 +299,22 @@ impl Subscribers {
     fn notify(&self) {
         let mut notified = false;
         if let Some(waker) = self.waker.as_ref() {
-            trace!("Got data, waking our waker");
+            trace!("Got data, waking our waker.");
             waker.wake_by_ref();
             notified = true;
         }
         if let Some(next) = self.next.as_ref() {
-            trace!("Got data, notifying next in chain");
+            trace!("Got data, notifying next in chain.");
             next.notify();
             notified = true;
         }
         for task in self.tasks.iter() {
-            trace!("Got data, notifying task");
+            trace!("Got data, notifying task.");
             task.notify();
             notified = true;
         }
         if !notified {
-            trace!("Got data but we have no one to notify");
+            trace!("Got data but we have no one to notify.");
         }
     }
 }
@@ -472,7 +472,7 @@ impl<T, S> Drop for PinkySwear<T, S> {
     fn drop(&mut self) {
         trace!(
             promise = %self.pinky.marker(),
-            "Dropping promise",
+            "Dropping promise.",
         );
     }
 }
