@@ -26,7 +26,7 @@
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 #![doc(test(attr(deny(rust_2018_idioms, warnings))))]
 #![doc(test(attr(allow(unused_extern_crates))))]
-#![doc(html_root_url = "https://docs.rs/pinky-swear/4.2.3/")]
+#![doc(html_root_url = "https://docs.rs/pinky-swear/4.3.0/")]
 
 doc_comment::doctest!("../README.md");
 
@@ -331,6 +331,13 @@ impl<T: Send + Clone + 'static, S: Send + 'static> PinkyBroadcaster<T, S> {
         };
         pinky.subscribers.lock().next = Some(Box::new(broadcaster.clone()));
         broadcaster
+    }
+
+    /// Cancel the broadcaster. This makes the broadcaster stop following the inner promise.
+    /// No signal gets sent to subscribers, for this you should use `PinkyBroadcaster::swear` instead.
+    pub fn cancel(&self)  {
+        let pinky = self.inner.lock().promise.pinky();
+        pinky.subscribers.lock().next = None;
     }
 
     /// Subscribe to receive a broacast when the underlying promise get henoured.
