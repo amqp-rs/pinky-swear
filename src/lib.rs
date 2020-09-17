@@ -62,6 +62,7 @@ pub struct Pinky<T> {
 struct Subscribers {
     waker: Option<Waker>,
     next: Option<Box<dyn NotifyReady + Send>>,
+    oneshot: Option<Box<dyn NotifyReady + Send>>,
     tasks: Vec<Box<dyn NotifyReady + Send>>,
 }
 
@@ -296,7 +297,7 @@ impl Subscribers {
         self.waker.is_some() || self.next.is_some() || !self.tasks.is_empty()
     }
 
-    fn notify(&self) {
+    fn notify(&mut self) {
         let mut notified = false;
         if let Some(waker) = self.waker.as_ref() {
             trace!("Got data, waking our waker.");
@@ -306,6 +307,11 @@ impl Subscribers {
         if let Some(next) = self.next.as_ref() {
             trace!("Got data, notifying next in chain.");
             next.notify();
+            notified = true;
+        }
+        if let Some(oneshot) = self.oneshot.take() {
+            trace!("Got data, notifying next oneshot in chain.");
+            oneshot.notify();
             notified = true;
         }
         for task in self.tasks.iter() {
@@ -329,7 +335,7 @@ impl<T: Send + Clone + 'static, S: Send + 'static> PinkyBroadcaster<T, S> {
                 subscribers: Vec::default(),
             })),
         };
-        pinky.subscribers.lock().next = Some(Box::new(broadcaster.clone()));
+        pinky.subscribers.lock().oneshot = Some(Box::new(broadcaster.clone()));
         broadcaster
     }
 
@@ -463,8 +469,6 @@ impl<T> NotifyReady for Pinky<T> {
 impl<T: Send + Clone + 'static, S: Send + 'static> NotifyReady for PinkyBroadcaster<T, S> {
     fn notify(&self) {
         let inner = self.inner.lock();
-        let pinky = inner.promise.pinky();
-        pinky.subscribers.lock().next = None;
         let data = inner.promise.wait();
         for subscriber in inner.subscribers.iter() {
             subscriber.swear(data.clone())
