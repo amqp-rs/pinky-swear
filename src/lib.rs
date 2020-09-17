@@ -335,7 +335,7 @@ impl<T: Send + Clone + 'static, S: Send + 'static> PinkyBroadcaster<T, S> {
 
     /// Cancel the broadcaster. This makes the broadcaster stop following the inner promise.
     /// No signal gets sent to subscribers, for this you should use `PinkyBroadcaster::swear` instead.
-    pub fn cancel(&self)  {
+    pub fn cancel(&self) {
         let pinky = self.inner.lock().promise.pinky();
         pinky.subscribers.lock().next = None;
     }
