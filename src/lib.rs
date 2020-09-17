@@ -355,7 +355,6 @@ impl<T: Send + Clone + 'static, S: Send + 'static> PinkyBroadcaster<T, S> {
     pub fn swear(&self, data: T) {
         let pinky = self.inner.lock().promise.pinky();
         pinky.swear(data);
-        pinky.subscribers.lock().next = None;
     }
 }
 
@@ -464,6 +463,8 @@ impl<T> NotifyReady for Pinky<T> {
 impl<T: Send + Clone + 'static, S: Send + 'static> NotifyReady for PinkyBroadcaster<T, S> {
     fn notify(&self) {
         let inner = self.inner.lock();
+        let pinky = inner.promise.pinky();
+        pinky.subscribers.lock().next = None;
         let data = inner.promise.wait();
         for subscriber in inner.subscribers.iter() {
             subscriber.swear(data.clone())
