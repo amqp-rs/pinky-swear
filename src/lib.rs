@@ -344,7 +344,7 @@ impl<T: Send + Clone + 'static, S: Send + 'static> PinkyBroadcaster<T, S> {
     /// #[deprecated]
     pub fn cancel(&self) {
         let pinky = self.inner.lock().promise.pinky();
-        pinky.subscribers.lock().next = None;
+        pinky.subscribers.lock().oneshot = None;
     }
 
     /// Subscribe to receive a broacast when the underlying promise get henoured.
