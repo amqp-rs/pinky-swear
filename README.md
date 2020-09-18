@@ -18,7 +18,7 @@ fn compute(pinky: Pinky<Result<u32, ()>>) {
 }
 
 fn main() {
-    let (promise, pinky) = PinkySwear::<Result<u32, ()>>::new();
+    let (promise, pinky) = PinkySwear::new();
     thread::spawn(move || {
         compute(pinky);
     });
