@@ -14,6 +14,10 @@ categories = [ "asynchronous" ]
 doc-comment = "^0.3"
 parking_lot = '^0.11'
 
+[dependencies.flume]
+version = "^0.9"
+default-features = false
+
 [dependencies.tracing]
 version = "^0.1"
 default-features = false

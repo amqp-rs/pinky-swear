@@ -30,15 +30,13 @@
 
 doc_comment::doctest!("../README.md");
 
+use flume::{Receiver, Sender};
 use parking_lot::{Mutex, RwLock};
 use std::{
     fmt,
     future::Future,
     pin::Pin,
-    sync::{
-        mpsc::{self, Receiver, Sender},
-        Arc,
-    },
+    sync::Arc,
     task::{Context, Poll, Waker},
 };
 use tracing::{trace, warn};
@@ -59,7 +57,7 @@ pub struct PinkySwear<T> {
 impl<T: Send + 'static> PinkySwear<T> {
     /// Create a new PinkySwear and its associated Pinky.
     pub fn new() -> (Self, Pinky<T>) {
-        let (send, recv) = mpsc::channel();
+        let (send, recv) = flume::unbounded();
         let pinky = Pinky {
             send,
             waker: Default::default(),
