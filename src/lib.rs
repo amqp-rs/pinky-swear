@@ -26,7 +26,7 @@
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 #![doc(test(attr(deny(rust_2018_idioms, warnings))))]
 #![doc(test(attr(allow(unused_extern_crates))))]
-#![doc(html_root_url = "https://docs.rs/pinky-swear/4.4.0/")]
+#![doc(html_root_url = "https://docs.rs/pinky-swear/5.0.1/")]
 
 doc_comment::doctest!("../README.md");
 
@@ -162,7 +162,9 @@ impl<T> Pinky<T> {
             .as_ref()
             .map_or(String::default(), |marker| format!("[{}] ", marker))
     }
+}
 
+impl<T> Clone for Pinky<T> {
     fn clone(&self) -> Self {
         Self {
             send: self.send.clone(),
