@@ -1,6 +1,6 @@
 [package]
 name = "pinky-swear"
-version = "5.1.0" # remember to update html_root_url
+version = "5.2.0" # remember to update html_root_url
 authors = ["Marc-Antoine Perennou <Marc-Antoine@Perennou.com>"]
 edition = "2021"
 description = "Futures and async/await-ready Promises"
