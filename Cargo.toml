@@ -2,17 +2,18 @@
 name = "pinky-swear"
 version = "5.1.0" # remember to update html_root_url
 authors = ["Marc-Antoine Perennou <Marc-Antoine@Perennou.com>"]
-edition = "2018"
+edition = "2021"
 description = "Futures and async/await-ready Promises"
 repository = "https://github.com/Keruspe/pinky-swear"
 documentation = "https://docs.rs/pinky-swear"
 license = "BSD-2-Clause"
 keywords = [ "futures", "promises", "async" ]
 categories = [ "asynchronous" ]
+rust-version = "1.56.0"
 
 [dependencies]
 doc-comment = "^0.3"
-parking_lot = '^0.11'
+parking_lot = "^0.11"
 
 [dependencies.flume]
 version = "^0.10"
