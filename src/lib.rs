@@ -192,14 +192,27 @@ impl<T> fmt::Debug for Pinky<T> {
     }
 }
 
-/// A PinkyBroadcaster allows you to broacast a promise resolution to several subscribers.
-#[must_use = "PinkyBroadcaster must be subscribed"]
-pub struct PinkyBroadcaster<T: Clone> {
+/// A PinkyErrorBroadcaster allows you to broacast the success/error of a promise resolution to several subscribers.
+pub struct PinkyErrorBroadcaster<T, E: Clone> {
     marker: Arc<RwLock<Option<String>>>,
-    inner: Arc<Mutex<BroadcasterInner<T>>>,
+    inner: Arc<Mutex<ErrorBroadcasterInner<E>>>,
+    pinky: Pinky<Result<T, E>>,
 }
 
-impl<T: Send + Clone + 'static> PinkyBroadcaster<T> {
+impl<T: Send + 'static, E: Send + Clone + 'static> PinkyErrorBroadcaster<T, E> {
+    /// Create a new promise with associated error broadcaster
+    pub fn new() -> (PinkySwear<Result<T, E>>, Self) {
+        let (promise, pinky) = PinkySwear::new();
+        (
+            promise,
+            Self {
+                marker: Default::default(),
+                inner: Arc::new(Mutex::new(ErrorBroadcasterInner(Vec::default()))),
+                pinky,
+            },
+        )
+    }
+
     /// Add a marker to logs
     pub fn set_marker(&self, marker: String) {
         for subscriber in self.inner.lock().0.iter() {
@@ -209,42 +222,34 @@ impl<T: Send + Clone + 'static> PinkyBroadcaster<T> {
     }
 
     /// Subscribe to receive a broacast when the underlying promise get henoured.
-    pub fn subscribe(&self) -> PinkySwear<T> {
+    pub fn subscribe(&self) -> PinkySwear<Result<(), E>> {
         self.inner.lock().subscribe(self.marker.read().clone())
     }
 
     /// Unsubscribe a promise from the broadcast.
-    pub fn unsubscribe(&self, promise: PinkySwear<T>) {
+    pub fn unsubscribe(&self, promise: PinkySwear<Result<(), E>>) {
         self.inner.lock().unsubscribe(promise);
     }
 
     /// Resolve the underlying promise and broadcast the result to subscribers.
-    pub fn swear(&self, data: T) {
+    pub fn swear(&self, data: Result<T, E>) {
         for subscriber in self.inner.lock().0.iter() {
-            subscriber.swear(data.clone())
+            subscriber.swear(data.as_ref().map(|_| ()).map_err(Clone::clone))
         }
+        self.pinky.swear(data);
     }
 }
 
-impl<T: Send + Clone + 'static> Default for PinkyBroadcaster<T> {
-    fn default() -> Self {
-        Self {
-            marker: Default::default(),
-            inner: Arc::new(Mutex::new(BroadcasterInner(Vec::default()))),
-        }
-    }
-}
-
-impl<T: Clone> fmt::Debug for PinkyBroadcaster<T> {
+impl<T, E: Clone> fmt::Debug for PinkyErrorBroadcaster<T, E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "PinkyBroadcaster")
+        write!(f, "PinkyErrorBroadcaster")
     }
 }
 
-struct BroadcasterInner<T>(Vec<Pinky<T>>);
+struct ErrorBroadcasterInner<E>(Vec<Pinky<Result<(), E>>>);
 
-impl<T: Send + 'static> BroadcasterInner<T> {
-    fn subscribe(&mut self, marker: Option<String>) -> PinkySwear<T> {
+impl<E: Send + 'static> ErrorBroadcasterInner<E> {
+    fn subscribe(&mut self, marker: Option<String>) -> PinkySwear<Result<(), E>> {
         let (promise, pinky) = PinkySwear::new();
         self.0.push(pinky);
         if let Some(marker) = marker {
@@ -253,7 +258,7 @@ impl<T: Send + 'static> BroadcasterInner<T> {
         promise
     }
 
-    fn unsubscribe(&mut self, promise: PinkySwear<T>) {
+    fn unsubscribe(&mut self, promise: PinkySwear<Result<(), E>>) {
         self.0.retain(|pinky| pinky != &promise.pinky)
     }
 }
