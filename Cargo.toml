@@ -4,7 +4,7 @@ version = "5.2.0" # remember to update html_root_url
 authors = ["Marc-Antoine Perennou <Marc-Antoine@Perennou.com>"]
 edition = "2021"
 description = "Futures and async/await-ready Promises"
-repository = "https://github.com/Keruspe/pinky-swear"
+repository = "https://github.com/amqp-rs/pinky-swear"
 documentation = "https://docs.rs/pinky-swear"
 license = "BSD-2-Clause"
 keywords = [ "futures", "promises", "async" ]
@@ -22,3 +22,6 @@ default-features = false
 [dependencies.tracing]
 version = "^0.1"
 default-features = false
+
+[badges]
+maintenance = { status = "actively-developed" }
