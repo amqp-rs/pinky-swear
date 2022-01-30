@@ -1,6 +1,6 @@
 [package]
 name = "pinky-swear"
-version = "4.4.0" # remember to update html_root_url
+version = "4.5.0" # remember to update html_root_url
 authors = ["Marc-Antoine Perennou <Marc-Antoine@Perennou.com>"]
 edition = "2018"
 description = "Futures and async/await-ready Promises"
@@ -12,7 +12,7 @@ categories = [ "asynchronous" ]
 
 [dependencies]
 doc-comment = "^0.3"
-parking_lot = '^0.11'
+parking_lot = '^0.12'
 
 [dependencies.tracing]
 version = "^0.1"
