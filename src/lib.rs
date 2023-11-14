@@ -26,7 +26,7 @@
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 #![doc(test(attr(deny(rust_2018_idioms, warnings))))]
 #![doc(test(attr(allow(unused_extern_crates))))]
-#![doc(html_root_url = "https://docs.rs/pinky-swear/6.0.0/")]
+#![doc(html_root_url = "https://docs.rs/pinky-swear/6.2.0/")]
 
 doc_comment::doctest!("../README.md");
 
